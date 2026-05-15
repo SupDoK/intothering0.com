@@ -13,7 +13,6 @@ function makeRand(seed: number) {
 }
 const rand = makeRand(0xc0ffee42);
 
-// Box-Muller Gaussian sample
 function gauss(mean: number, std: number): number {
   const u = Math.max(1e-9, rand());
   const v = rand();
@@ -23,6 +22,12 @@ function gauss(mean: number, std: number): number {
 // ── SVG dimensions & impact point ─────────────────────────────────────────────
 const W = 1000, H = 420;
 const IX = 375, IY = 198;
+
+// ── Motion constants (baked per-shard at build time) ──────────────────────────
+const TX_MAX = 40,  TY_MAX = 24,  ROT_MAX = 2.8;
+const TX_K  = [0.018, 0.085, 0.22,  0.46,  1.0 ];
+const TY_K  = [0.012, 0.060, 0.16,  0.34,  0.72];
+const ROT_K = [0.04,  0.18,  0.48,  0.95,  1.8 ];
 
 // ── Seed points ───────────────────────────────────────────────────────────────
 const seeds: [number, number][] = [];
@@ -49,11 +54,12 @@ const voronoi  = delaunay.voronoi([0, 0, W, H]);
 // ── Process cells ─────────────────────────────────────────────────────────────
 interface Shard {
   pts:           string;
-  cx:            number;
-  cy:            number;
-  depth:         number;  // 0 = back, 4 = front
-  delay:         number;  // entrance animation delay in ms
-  rotScale:      number;  // per-shard rotation multiplier; sign may be negative
+  depth:         number;
+  delay:         number;  // entrance animation delay ms
+  txBase:        number;  // px displacement at mx=1.0  (baked, includes depth + noise)
+  tyBase:        number;  // px displacement at my=1.0
+  rotBase:       number;  // degrees at mx=1.0 before rot-scale  (depth-based)
+  rotScale:      number;  // per-shard rotation multiplier; may be negative
   fillOpacity:   number;
   strokeColor:   string;
   strokeOpacity: number;
@@ -65,16 +71,16 @@ const raw: { pts: [number,number][]; cx: number; cy: number; dist: number }[] = 
 let maxDist = 0;
 for (const poly of voronoi.cellPolygons()) {
   if (!poly || poly.length < 3) continue;
-  const pts = Array.from(poly) as [number,number][];
-  const cx  = pts.reduce((s, p) => s + p[0], 0) / pts.length;
-  const cy  = pts.reduce((s, p) => s + p[1], 0) / pts.length;
+  const pts  = Array.from(poly) as [number,number][];
+  const cx   = pts.reduce((s, p) => s + p[0], 0) / pts.length;
+  const cy   = pts.reduce((s, p) => s + p[1], 0) / pts.length;
   const dist = Math.hypot(cx - IX, cy - IY);
   if (dist > maxDist) maxDist = dist;
   raw.push({ pts, cx, cy, dist });
 }
 
 const shards: Shard[] = raw.map((cell, i) => {
-  const { pts, cx, cy, dist } = cell;
+  const { pts, dist } = cell;
 
   const norm     = 1 - Math.min(dist / (maxDist * 0.92), 1);
   const rawDepth = norm * 4 + (rand() - 0.5) * 1.1;
@@ -82,15 +88,21 @@ const shards: Shard[] = raw.map((cell, i) => {
 
   const delay = Math.round((dist / maxDist) * 860);
 
-  // ── Per-shard rotation scale ───────────────────────────────────────────
-  // Each shard independently amplifies, dampens, or inverts the layer's base
-  // rotation.  ~14% counter-rotate (negative sign).  Deeper shards swing more.
+  // Per-shard motion — depth sets baseline, noise breaks the blocks.
+  // Each shard gets its own displacement magnitude (±25%) so shards at the
+  // same depth visibly travel different distances.
+  const noiseX = 0.75 + rand() * 0.50;
+  const noiseY = 0.75 + rand() * 0.50;
+  const txBase = parseFloat((TX_MAX  * TX_K[depth]  * noiseX).toFixed(2));
+  const tyBase = parseFloat((TY_MAX  * TY_K[depth]  * noiseY).toFixed(2));
+  const rotBase = parseFloat((ROT_MAX * ROT_K[depth]).toFixed(3));
+
+  // ~14% of shards counter-rotate.  Foreground shards swing more.
   const rotDir       = rand() < 0.14 ? -1 : 1;
-  const rotMag       = 0.08 + rand() * 0.32;                     // 0.08 – 0.40
-  const rotDepthMult = [0.15, 0.35, 0.65, 0.95, 1.25][depth];
+  const rotMag       = 0.15 + rand() * 0.55;
+  const rotDepthMult = [0.12, 0.35, 0.65, 0.95, 1.30][depth];
   const rotScale     = parseFloat((rotDir * rotMag * rotDepthMult).toFixed(3));
 
-  // ── Visual properties ─────────────────────────────────────────────────
   const fillOpacity   = parseFloat((0.10 + (depth / 4) * 0.18 + rand() * 0.07).toFixed(3));
   const isAccent      = (i % 7 === 2 || i % 13 === 1);
   const strokeColor   = isAccent ? '#c41e3a' : '#c4ddf0';
@@ -103,13 +115,10 @@ const shards: Shard[] = raw.map((cell, i) => {
 
   return {
     pts: pts.map(([x, y]) => `${x.toFixed(1)},${y.toFixed(1)}`).join(' '),
-    cx, cy, depth, delay, rotScale,
+    depth, delay, txBase, tyBase, rotBase, rotScale,
     fillOpacity, strokeColor, strokeOpacity, strokeWidth, filter,
   };
 });
-
-const byDepth: Shard[][] = [[], [], [], [], []];
-shards.forEach(s => byDepth[s.depth].push(s));
 
 // ── Light rays ────────────────────────────────────────────────────────────────
 const rays = Array.from({ length: 10 }, (_, i) => {
@@ -128,14 +137,38 @@ const rays = Array.from({ length: 10 }, (_, i) => {
 ---
 
 <!--
-  @property declarations must be global so CSS can resolve
-  calc(<angle> * <number>) across the SVG shadow DOM.
+  --hero-mx-n / --hero-my-n: typed <number> so calc(<number> * <length>)
+  resolves correctly in child elements without any JS per-shard work.
+
+  --tx / --ty: per-shard <length> baked at build time.
+  --rot-base:  per-shard <number> (degrees at mx=1.0, before rot-scale).
+  --rot-scale: per-shard signed multiplier; ~14% are negative (counter-rotate).
 -->
 <style is:global>
-  @property --hero-rot {
-    syntax: '<angle>';
+  @property --hero-mx-n {
+    syntax: '<number>';
     inherits: true;
-    initial-value: 0deg;
+    initial-value: 0;
+  }
+  @property --hero-my-n {
+    syntax: '<number>';
+    inherits: true;
+    initial-value: 0;
+  }
+  @property --tx {
+    syntax: '<length>';
+    inherits: false;
+    initial-value: 0px;
+  }
+  @property --ty {
+    syntax: '<length>';
+    inherits: false;
+    initial-value: 0px;
+  }
+  @property --rot-base {
+    syntax: '<number>';
+    inherits: false;
+    initial-value: 0;
   }
   @property --rot-scale {
     syntax: '<number>';
@@ -145,28 +178,30 @@ const rays = Array.from({ length: 10 }, (_, i) => {
 </style>
 
 <style>
-  /* ── Depth-layer groups: translation + group arc around impact point ─── */
-  .depth-layer {
-    transform-box: view-box;
-    transform-origin: 375px 198px;
-    will-change: transform;
-  }
-
   /*
-    Per-shard rotation wrapper.
-    --hero-rot  is set on the parent depth-layer each frame (typed <angle>).
-    --rot-scale is baked into each wrapper's inline style at build time (<number>).
-    calc(<angle> * <number>) is valid and produces <angle>.
-    Each shard therefore rotates by a unique fraction of the layer's base rotation,
-    with ~14% rotating in the opposite direction.
+    Every shard wrapper is independent.  JS only ever writes two custom
+    properties (--hero-mx-n, --hero-my-n) to the SVG element per frame;
+    the browser fans out the per-shard calc() for free.
+
+    translate: each shard has its own --tx / --ty magnitude (depth + ±25% noise).
+    rotate:    each shard has its own --rot-base and --rot-scale, so no two shards
+               tumble at the same rate.  ~14% have a negative --rot-scale and
+               spin against the crowd.
   */
   .shard-rot {
     transform-box: fill-box;
     transform-origin: center;
-    transform: rotate(calc(var(--hero-rot) * var(--rot-scale)));
+    transform:
+      translate(
+        calc(var(--hero-mx-n) * var(--tx)),
+        calc(var(--hero-my-n) * var(--ty))
+      )
+      rotate(
+        calc(var(--hero-mx-n) * var(--rot-base) * var(--rot-scale) * 1deg)
+      );
   }
 
-  /* ── Entrance animation ──────────────────────────────────────────────── */
+  /* ── Entrance animation ─────────────────────────────────────────────── */
   @media not (prefers-reduced-motion: reduce) {
     .shard {
       animation: shardIn 0.88s cubic-bezier(0.15, 0.8, 0.3, 1) both;
@@ -243,32 +278,28 @@ const rays = Array.from({ length: 10 }, (_, i) => {
       ))}
     </g>
 
-    {byDepth.map((group, d) => (
-      <g id={`depth-${d}`} class="depth-layer">
-        {group.map(s => (
-          <!--
-            Outer <g>: per-shard rotation via CSS @property inheritance.
-            Inner <polygon>: entrance scale animation + fill/stroke.
-            Transforms compose: layer-translate → layer-arc-around-impact
-              → shard-rot-around-centroid → entrance-scale-around-centroid.
-          -->
-          <g class="shard-rot" style={`--rot-scale:${s.rotScale}`}>
-            <polygon
-              class="shard"
-              style={`animation-delay:${s.delay}ms`}
-              points={s.pts}
-              fill="#0a0d10"
-              fill-opacity={s.fillOpacity}
-              stroke={s.strokeColor}
-              stroke-opacity={s.strokeOpacity}
-              stroke-width={s.strokeWidth}
-              stroke-linejoin="bevel"
-              filter={s.filter !== 'none' ? s.filter : undefined}
-            />
-          </g>
-        ))}
-      </g>
-    ))}
+    <!-- All shards flat — no depth grouping, every shard fully independent -->
+    <g id="shards">
+      {shards.map(s => (
+        <g
+          class="shard-rot"
+          style={`--tx:${s.txBase}px;--ty:${s.tyBase}px;--rot-base:${s.rotBase};--rot-scale:${s.rotScale}`}
+        >
+          <polygon
+            class="shard"
+            style={`animation-delay:${s.delay}ms`}
+            points={s.pts}
+            fill="#0a0d10"
+            fill-opacity={s.fillOpacity}
+            stroke={s.strokeColor}
+            stroke-opacity={s.strokeOpacity}
+            stroke-width={s.strokeWidth}
+            stroke-linejoin="bevel"
+            filter={s.filter !== 'none' ? s.filter : undefined}
+          />
+        </g>
+      ))}
+    </g>
 
     <circle cx={IX} cy={IY} r="3.5" fill="#e63946" opacity="0.85"/>
     <circle cx={IX} cy={IY} r="9"   fill="none" stroke="#c41e3a" stroke-width="0.8" opacity="0.5"/>
@@ -283,26 +314,17 @@ const rays = Array.from({ length: 10 }, (_, i) => {
 </section>
 
 <script>
-  const hero   = document.getElementById('hero') as HTMLElement;
-  const layers = [0,1,2,3,4].map(d =>
-    document.getElementById(`depth-${d}`) as SVGGElement | null
-  );
-
-  // Translation and group-arc multipliers (depth 0 = barely moves, 4 = full)
-  const TX_K   = [0.018, 0.085, 0.22,  0.46, 1.0];
-  const TY_K   = [0.012, 0.060, 0.16,  0.34, 0.72];
-  const ROT_K  = [0.04,  0.18,  0.48,  0.95, 1.8];
-  const TX_MAX  = 36;   // px at depth-4 full deflection
-  const TY_MAX  = 22;
-  const ROT_MAX = 2.0;  // deg at depth-4 full deflection
+  const hero = document.getElementById('hero')   as HTMLElement;
+  const svg  = document.getElementById('hero-svg') as unknown as SVGElement;
 
   let targetX = 0, targetY = 0;
   let currentX = 0, currentY = 0;
-  let isOver = false;
-  let rafId  = 0;
+  let isOver  = false;
+  let rafId   = 0;
 
   function lerp(a: number, b: number, t: number) { return a + (b - a) * t; }
 
+  // Slow Lissajous so shards never look frozen
   function idle(t: number) {
     return {
       x: 0.11 * Math.sin(t * 0.000295),
@@ -320,20 +342,9 @@ const rays = Array.from({ length: 10 }, (_, i) => {
     currentX = lerp(currentX, targetX, 0.09);
     currentY = lerp(currentY, targetY, 0.09);
 
-    layers.forEach((layer, d) => {
-      if (!layer) return;
-      const tx  = currentX * TX_K[d]  * TX_MAX;
-      const ty  = currentY * TY_K[d]  * TY_MAX;
-      const rot = currentX * ROT_K[d] * ROT_MAX;
-
-      // Group arc around impact point (all shards in layer move together)
-      layer.style.transform =
-        `translate(${tx.toFixed(2)}px,${ty.toFixed(2)}px) rotate(${rot.toFixed(4)}deg)`;
-
-      // Per-shard rotation base: each .shard-rot child multiplies this by
-      // its own --rot-scale, giving every shard a unique rotation fingerprint.
-      layer.style.setProperty('--hero-rot', `${rot.toFixed(4)}deg`);
-    });
+    // Two property writes drive 112 independent shard transforms via CSS calc().
+    svg.style.setProperty('--hero-mx-n', currentX.toFixed(5));
+    svg.style.setProperty('--hero-my-n', currentY.toFixed(5));
 
     rafId = requestAnimationFrame(tick);
   }
