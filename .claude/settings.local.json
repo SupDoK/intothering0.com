@@ -2,7 +2,16 @@
   "permissions": {
     "allow": [
       "Bash(npm install *)",
-      "Bash(npm run *)"
+      "Bash(npm run *)",
+      "WebSearch",
+      "WebFetch(domain:nikhilnxvverma1.github.io)",
+      "WebFetch(domain:github.com)",
+      "WebFetch(domain:codepen.io)",
+      "WebFetch(domain:editor.p5js.org)",
+      "WebFetch(domain:www.awwwards.com)",
+      "WebFetch(domain:gist.github.com)",
+      "WebFetch(domain:www.addlime.com)",
+      "Bash(node --input-type=module)"
     ]
   }
 }

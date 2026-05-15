@@ -1,280 +1,347 @@
 ---
-// TODO: Replace the site title text in .hero-eyebrow below
+import { Delaunay } from 'd3-delaunay';
+
+// ── Seeded deterministic RNG (mulberry32) ─────────────────────────────────────
+function makeRand(seed: number) {
+  let s = seed;
+  return () => {
+    s = (s + 0x6D2B79F5) | 0;
+    let t = Math.imul(s ^ (s >>> 15), 1 | s);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+const rand = makeRand(0xc0ffee42);
+
+// Box-Muller Gaussian sample
+function gauss(mean: number, std: number): number {
+  const u = Math.max(1e-9, rand());
+  const v = rand();
+  return mean + Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * v) * std;
+}
+
+// ── SVG dimensions & impact point ─────────────────────────────────────────────
+const W = 1000, H = 420;
+const IX = 375, IY = 198; // impact point (slightly off-center left)
+
+// ── Seed points ───────────────────────────────────────────────────────────────
+const seeds: [number, number][] = [];
+const clamp = (v: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, v));
+
+// Dense crater: tight cluster around impact
+for (let i = 0; i < 38; i++) {
+  seeds.push([clamp(gauss(IX, 44), 2, W - 2), clamp(gauss(IY, 36), 2, H - 2)]);
+}
+// Medium ring
+for (let i = 0; i < 32; i++) {
+  seeds.push([clamp(gauss(IX, 135), 2, W - 2), clamp(gauss(IY, 108), 2, H - 2)]);
+}
+// Sparse outer field
+for (let i = 0; i < 28; i++) {
+  seeds.push([clamp(gauss(IX, 285), 2, W - 2), clamp(gauss(IY, 195), 2, H - 2)]);
+}
+// Border anchors to fully tile the SVG
+const borders: [number, number][] = [
+  [1, 1], [250, 1], [500, 1], [750, 1], [999, 1],
+  [1, 140], [999, 140],
+  [1, 280], [999, 280],
+  [1, 419], [250, 419], [500, 419], [750, 419], [999, 419],
+];
+const allSeeds = [...seeds, ...borders];
+
+// ── Voronoi tessellation (runs at build time) ─────────────────────────────────
+const delaunay = Delaunay.from(allSeeds);
+const voronoi = delaunay.voronoi([0, 0, W, H]);
+
+// ── Process cells ─────────────────────────────────────────────────────────────
+interface Shard {
+  pts: string;
+  cx: number; cy: number;
+  depth: number; // 0 = far back, 4 = closest
+  fromX: number; fromY: number; // entrance anim offset
+  delay: number; // ms
+  fillOpacity: number;
+  strokeColor: string;
+  strokeOpacity: number;
+  strokeWidth: number;
+  filter: string;
+}
+
+// First pass: collect raw geometry
+const raw: { pts: [number,number][]; cx: number; cy: number; dist: number }[] = [];
+let maxDist = 0;
+for (const poly of voronoi.cellPolygons()) {
+  if (!poly || poly.length < 3) continue;
+  const pts = Array.from(poly) as [number,number][];
+  const cx = pts.reduce((s, p) => s + p[0], 0) / pts.length;
+  const cy = pts.reduce((s, p) => s + p[1], 0) / pts.length;
+  const dist = Math.hypot(cx - IX, cy - IY);
+  if (dist > maxDist) maxDist = dist;
+  raw.push({ pts, cx, cy, dist });
+}
+
+// Second pass: assign visual properties
+const shards: Shard[] = raw.map((cell, i) => {
+  const { pts, cx, cy, dist } = cell;
+  const norm = 1 - Math.min(dist / (maxDist * 0.92), 1); // 1 = at impact, 0 = far edge
+  const rawDepth = norm * 4 + (rand() - 0.5) * 1.1;
+  const depth = Math.max(0, Math.min(4, Math.round(rawDepth)));
+
+  // Entrance animation: shard starts at impact point, expands to its resting place
+  const delay = Math.round((dist / maxDist) * 860);
+  const fromX = parseFloat((IX - cx).toFixed(1));
+  const fromY = parseFloat((IY - cy).toFixed(1));
+
+  // Fill: near-black with subtle blue tint, more opaque toward foreground
+  const fillOpacity = parseFloat((0.10 + (depth / 4) * 0.18 + rand() * 0.07).toFixed(3));
+
+  // Stroke: ~18% of shards get the red accent; rest get cold glass-white
+  const isAccent = (i % 7 === 2 || i % 13 === 1);
+  // Deeper shards get brighter, thicker edges
+  const strokeColor = isAccent ? '#c41e3a' : '#c4ddf0';
+  const strokeOpacity = parseFloat((0.15 + (depth / 4) * 0.55 + rand() * 0.10).toFixed(3));
+  const strokeWidth = parseFloat((0.4 + (depth / 4) * 0.65).toFixed(2));
+
+  // Filters: specular sheen on ~20% of depth-3/4, chromatic on ~12% of depth-4
+  let filter = 'none';
+  if (depth === 4 && i % 5 === 0) filter = 'url(#glassSheen)';
+  else if (depth >= 3 && i % 8 === 3) filter = 'url(#chromatic)';
+
+  return {
+    pts: pts.map(([x, y]) => `${x.toFixed(1)},${y.toFixed(1)}`).join(' '),
+    cx, cy, depth, fromX, fromY, delay,
+    fillOpacity, strokeColor, strokeOpacity, strokeWidth, filter,
+  };
+});
+
+// Group by depth for the parallax layers
+const byDepth: Shard[][] = [[], [], [], [], []];
+shards.forEach(s => byDepth[s.depth].push(s));
+
+// ── Light rays ────────────────────────────────────────────────────────────────
+const rays = Array.from({ length: 10 }, (_, i) => {
+  const angle = (i / 10) * Math.PI * 2 + rand() * 0.6 + 0.2;
+  const len = 200 + rand() * 380;
+  const half = 0.018 + rand() * 0.055;
+  const op = parseFloat((0.016 + rand() * 0.022).toFixed(4));
+  return {
+    ax: (IX + Math.cos(angle - half) * len).toFixed(1),
+    ay: (IY + Math.sin(angle - half) * len).toFixed(1),
+    bx: (IX + Math.cos(angle + half) * len).toFixed(1),
+    by: (IY + Math.sin(angle + half) * len).toFixed(1),
+    op,
+  };
+});
 ---
+
+<style>
+  /* ── Depth-layer groups ────────────────────────────────────────────────── */
+  .depth-layer {
+    transform-box: view-box;
+    transform-origin: 375px 198px; /* matches IX, IY */
+    will-change: transform;
+  }
+
+  /* ── Shard entrance animation ─────────────────────────────────────────── */
+  @media not (prefers-reduced-motion: reduce) {
+    .shard {
+      animation: shardIn 0.88s cubic-bezier(0.15, 0.8, 0.3, 1) both;
+      transform-box: view-box;
+      transform-origin: 375px 198px;
+    }
+
+    @keyframes shardIn {
+      0% {
+        transform: translate(var(--fx), var(--fy)) scale(0.04);
+        opacity: 0;
+      }
+      55% { opacity: 1; }
+      100% {
+        transform: translate(0px, 0px) scale(1);
+        opacity: 1;
+      }
+    }
+  }
+</style>
+
 <section class="hero" id="hero">
-  <!--
-    Hand-authored SVG: 22 glass shards radiating from an explosion center at ~(470, 188).
-    data-depth: 1 = background (slow), 4 = foreground (fast).
-    Fills are pale blue-white at varied opacities; strokes alternate between thin red
-    highlights and icy edge glints to simulate light catching the fracture lines.
-  -->
   <svg
+    id="hero-svg"
     class="hero-svg"
-    viewBox="0 0 1000 380"
+    viewBox={`0 0 ${W} ${H}`}
     preserveAspectRatio="xMidYMid slice"
     xmlns="http://www.w3.org/2000/svg"
     aria-hidden="true"
   >
     <defs>
-      <!-- Radial glow behind the shatter point -->
-      <radialGradient id="shatterGlow" cx="47%" cy="49%" r="42%" gradientUnits="objectBoundingBox">
-        <stop offset="0%"   stop-color="#c41e3a" stop-opacity="0.22"/>
-        <stop offset="45%"  stop-color="#7a0010" stop-opacity="0.07"/>
+      <!-- Impact glow -->
+      <radialGradient id="impactGlow" cx="37.5%" cy="47.1%" r="48%" gradientUnits="userSpaceOnUse"
+        fx="375" fy="198">
+        <stop offset="0%"   stop-color="#c41e3a" stop-opacity="0.30"/>
+        <stop offset="30%"  stop-color="#7a0010" stop-opacity="0.12"/>
+        <stop offset="70%"  stop-color="#3a0008" stop-opacity="0.04"/>
         <stop offset="100%" stop-color="#0a0a0a" stop-opacity="0"/>
       </radialGradient>
-      <!-- Subtle light gradient for shard fills -->
-      <linearGradient id="shardFill" x1="0%" y1="0%" x2="100%" y2="100%">
-        <stop offset="0%"   stop-color="#c8dff0" stop-opacity="1"/>
-        <stop offset="100%" stop-color="#8fb8d8" stop-opacity="1"/>
-      </linearGradient>
+
+      <!-- Specular glass sheen (applied to select foreground shards) -->
+      <filter id="glassSheen" x="-8%" y="-8%" width="116%" height="116%" color-interpolation-filters="sRGB">
+        <feGaussianBlur in="SourceAlpha" stdDeviation="2.5" result="blur"/>
+        <feSpecularLighting in="blur" surfaceScale="5" specularConstant="0.65"
+          specularExponent="28" lighting-color="#b8d8f8" result="spec">
+          <fePointLight x="280" y="-180" z="450"/>
+        </feSpecularLighting>
+        <feComposite in="spec" in2="SourceAlpha" operator="in" result="specClip"/>
+        <feBlend in="SourceGraphic" in2="specClip" mode="screen"/>
+      </filter>
+
+      <!-- Chromatic aberration fringe (applied to ~10% of foreground shards) -->
+      <filter id="chromatic" x="-6%" y="-6%" width="112%" height="112%" color-interpolation-filters="sRGB">
+        <feOffset in="SourceGraphic" dx="1.4" dy="0" result="rShift"/>
+        <feColorMatrix in="rShift" type="matrix"
+          values="1 0 0 0 0  0 0 0 0 0  0 0 0 0 0  0 0 0 0.55 0" result="rCh"/>
+        <feOffset in="SourceGraphic" dx="-1.4" dy="0" result="bShift"/>
+        <feColorMatrix in="bShift" type="matrix"
+          values="0 0 0 0 0  0 0 0 0 0  0 0 1 0 0  0 0 0 0.55 0" result="bCh"/>
+        <feMerge>
+          <feMergeNode in="SourceGraphic"/>
+          <feMergeNode in="rCh"/>
+          <feMergeNode in="bCh"/>
+        </feMerge>
+      </filter>
+
+      <!-- Light-ray blur -->
+      <filter id="rayBlur" x="-10%" y="-10%" width="120%" height="120%">
+        <feGaussianBlur stdDeviation="6"/>
+      </filter>
     </defs>
 
-    <!-- Background glow -->
-    <rect width="1000" height="380" fill="url(#shatterGlow)"/>
+    <!-- Background glow at impact -->
+    <rect width={W} height={H} fill="url(#impactGlow)"/>
 
-    <!-- ── BACKGROUND SHARDS (depth 1–2, large, muted) ───────────────── -->
+    <!-- Light rays emanating from impact -->
+    <g id="light-rays" style="mix-blend-mode: screen;" filter="url(#rayBlur)">
+      {rays.map(r => (
+        <polygon
+          points={`${IX},${IY} ${r.ax},${r.ay} ${r.bx},${r.by}`}
+          fill="#c41e3a"
+          opacity={r.op}
+        />
+      ))}
+    </g>
 
-    <!-- Shard 1: large upper-left -->
-    <polygon
-      data-depth="1"
-      points="28,8 298,6 450,150 270,210 52,165"
-      fill="url(#shardFill)" fill-opacity="0.06"
-      stroke="#2a1416" stroke-width="1"
-    />
-    <!-- Shard 2: large upper-right -->
-    <polygon
-      data-depth="1"
-      points="528,6 868,2 968,120 790,175 552,90"
-      fill="url(#shardFill)" fill-opacity="0.055"
-      stroke="#2a1416" stroke-width="1"
-    />
-    <!-- Shard 3: large lower-right -->
-    <polygon
-      data-depth="2"
-      points="640,258 888,220 992,358 960,378 680,378"
-      fill="url(#shardFill)" fill-opacity="0.075"
-      stroke="#2a1416" stroke-width="1"
-    />
-    <!-- Shard 4: large lower-left -->
-    <polygon
-      data-depth="2"
-      points="26,298 248,255 340,368 220,378 26,378"
-      fill="url(#shardFill)" fill-opacity="0.065"
-      stroke="#2a1416" stroke-width="1"
-    />
-    <!-- Shard 21: upper-far-right corner -->
-    <polygon
-      data-depth="2"
-      points="890,2 1000,0 1000,82 924,100 872,44"
-      fill="url(#shardFill)" fill-opacity="0.055"
-      stroke="#2a1416" stroke-width="1"
-    />
+    <!-- Depth layers (parallax applied per layer via JS) -->
+    {byDepth.map((group, d) => (
+      <g id={`depth-${d}`} class="depth-layer">
+        {group.map(s => (
+          <g
+            class="shard"
+            style={`--fx:${s.fromX}px; --fy:${s.fromY}px; animation-delay:${s.delay}ms;`}
+          >
+            <polygon
+              points={s.pts}
+              fill="#0a0d10"
+              fill-opacity={s.fillOpacity}
+              stroke={s.strokeColor}
+              stroke-opacity={s.strokeOpacity}
+              stroke-width={s.strokeWidth}
+              stroke-linejoin="bevel"
+              filter={s.filter !== 'none' ? s.filter : undefined}
+            />
+          </g>
+        ))}
+      </g>
+    ))}
 
-    <!-- ── MIDGROUND SHARDS (depth 3, medium, red-highlighted edges) ─── -->
-
-    <!-- Shard 5: medium upper-center -->
-    <polygon
-      data-depth="3"
-      points="415,26 540,6 595,130 508,160 390,92"
-      fill="url(#shardFill)" fill-opacity="0.13"
-      stroke="#c41e3a" stroke-width="0.6" stroke-opacity="0.5"
-    />
-    <!-- Shard 6: medium right-center -->
-    <polygon
-      data-depth="3"
-      points="620,170 775,135 804,284 682,314 590,250"
-      fill="url(#shardFill)" fill-opacity="0.11"
-      stroke="#c41e3a" stroke-width="0.6" stroke-opacity="0.45"
-    />
-    <!-- Shard 7: medium lower-center -->
-    <polygon
-      data-depth="2"
-      points="474,270 595,250 630,372 520,378 440,338"
-      fill="url(#shardFill)" fill-opacity="0.11"
-      stroke="#c41e3a" stroke-width="0.6" stroke-opacity="0.4"
-    />
-    <!-- Shard 8: medium left-center -->
-    <polygon
-      data-depth="3"
-      points="215,160 390,125 420,244 330,290 190,258"
-      fill="url(#shardFill)" fill-opacity="0.09"
-      stroke="#c41e3a" stroke-width="0.6" stroke-opacity="0.4"
-    />
-    <!-- Shard 14: left-edge strip -->
-    <polygon
-      data-depth="2"
-      points="0,238 120,215 150,315 68,355 0,334"
-      fill="url(#shardFill)" fill-opacity="0.07"
-      stroke="#c41e3a" stroke-width="0.5" stroke-opacity="0.35"
-    />
-    <!-- Shard 12: small right-mid area -->
-    <polygon
-      data-depth="3"
-      points="820,150 905,124 924,195 844,215 802,172"
-      fill="url(#shardFill)" fill-opacity="0.14"
-      stroke="#c41e3a" stroke-width="0.5" stroke-opacity="0.5"
-    />
-    <!-- Shard 17: small lower-left -->
-    <polygon
-      data-depth="3"
-      points="130,365 270,330 300,378 210,378 118,378"
-      fill="url(#shardFill)" fill-opacity="0.12"
-      stroke="#c41e3a" stroke-width="0.5" stroke-opacity="0.4"
-    />
-    <!-- Shard 20: far-right thin strip -->
-    <polygon
-      data-depth="3"
-      points="944,245 1000,228 1000,320 950,325"
-      fill="url(#shardFill)" fill-opacity="0.09"
-      stroke="#c41e3a" stroke-width="0.5" stroke-opacity="0.3"
-    />
-    <!-- Shard 22: bottom-center fragment -->
-    <polygon
-      data-depth="3"
-      points="394,370 505,353 524,378 418,378 380,378"
-      fill="url(#shardFill)" fill-opacity="0.14"
-      stroke="#c41e3a" stroke-width="0.5" stroke-opacity="0.45"
-    />
-
-    <!-- ── FOREGROUND SHARDS (depth 4, small, icy glint edges) ───────── -->
-
-    <!-- Shard 9: small top-center, near explosion -->
-    <polygon
-      data-depth="4"
-      points="454,17 534,4 558,74 492,91 434,53"
-      fill="url(#shardFill)" fill-opacity="0.22"
-      stroke="rgba(200,225,248,0.55)" stroke-width="0.7"
-    />
-    <!-- Shard 10: small upper-left area -->
-    <polygon
-      data-depth="4"
-      points="285,17 384,7 404,79 344,93 272,54"
-      fill="url(#shardFill)" fill-opacity="0.18"
-      stroke="rgba(200,225,248,0.5)" stroke-width="0.7"
-    />
-    <!-- Shard 11: narrow elongated crossing center -->
-    <polygon
-      data-depth="4"
-      points="416,118 594,88 610,150 422,180"
-      fill="url(#shardFill)" fill-opacity="0.24"
-      stroke="rgba(200,225,248,0.6)" stroke-width="0.8"
-    />
-    <!-- Shard 15: small upper-right corner -->
-    <polygon
-      data-depth="4"
-      points="734,17 844,7 874,84 794,104 720,59"
-      fill="url(#shardFill)" fill-opacity="0.20"
-      stroke="rgba(200,225,248,0.5)" stroke-width="0.7"
-    />
-    <!-- Shard 16: tiny center-right fragment -->
-    <polygon
-      data-depth="4"
-      points="660,220 724,200 740,260 674,277"
-      fill="url(#shardFill)" fill-opacity="0.28"
-      stroke="rgba(200,225,248,0.65)" stroke-width="0.8"
-    />
-    <!-- Shard 13: tiny bottom-right -->
-    <polygon
-      data-depth="4"
-      points="870,334 945,310 960,378 878,378"
-      fill="url(#shardFill)" fill-opacity="0.20"
-      stroke="rgba(200,225,248,0.5)" stroke-width="0.7"
-    />
-    <!-- Shard 18: small near-center upper -->
-    <polygon
-      data-depth="4"
-      points="494,78 570,60 584,130 518,148"
-      fill="url(#shardFill)" fill-opacity="0.26"
-      stroke="rgba(200,225,248,0.65)" stroke-width="0.9"
-    />
-    <!-- Shard 19: tiny narrow center fragment — highest opacity, closest -->
-    <polygon
-      data-depth="4"
-      points="488,158 570,138 580,192 500,210"
-      fill="url(#shardFill)" fill-opacity="0.32"
-      stroke="rgba(220,238,252,0.75)" stroke-width="1"
-    />
+    <!-- Impact point accent: tiny bright dot + ring -->
+    <circle cx={IX} cy={IY} r="3.5" fill="#e63946" opacity="0.85"/>
+    <circle cx={IX} cy={IY} r="9" fill="none" stroke="#c41e3a" stroke-width="0.8" opacity="0.5"/>
+    <circle cx={IX} cy={IY} r="18" fill="none" stroke="#c41e3a" stroke-width="0.4" opacity="0.25"/>
   </svg>
 
-  <!-- Title overlay (lower-left, in a sparse area of the composition) -->
-  <div class="hero-overlay">
-    <!-- TODO: Replace this with your preferred site title or handle -->
-    <span class="hero-eyebrow">Into The Ring 0</span>
-    <p class="hero-tagline">windows internals &nbsp;·&nbsp; maldev &nbsp;·&nbsp; security research</p>
+  <!-- Title: right of the impact point -->
+  <div class="hero-title-wrap">
+    <p class="hero-label">// security research</p>
+    <!-- TODO: Replace "Into The Ring 0" with your preferred title -->
+    <h1 class="hero-name">Into The Ring 0</h1>
+    <p class="hero-sub">windows internals &nbsp;·&nbsp; maldev &nbsp;·&nbsp; opsec</p>
   </div>
 </section>
 
 <script>
-  const hero = document.getElementById('hero') as HTMLElement;
-  if (!hero) throw new Error('hero not found');
-
-  const shards = Array.from(
-    hero.querySelectorAll<SVGPolygonElement>('polygon[data-depth]')
+  // ── Setup ──────────────────────────────────────────────────────────────────
+  const hero   = document.getElementById('hero') as HTMLElement;
+  const svg    = document.getElementById('hero-svg') as unknown as SVGElement;
+  const layers = [0,1,2,3,4].map(d =>
+    document.getElementById(`depth-${d}`) as SVGGElement | null
   );
 
-  // Pre-compute centroid for each shard (for rotation pivot)
-  const centers = shards.map(p => {
-    const pts = p.points;
-    let cx = 0, cy = 0;
-    for (let i = 0; i < pts.numberOfItems; i++) {
-      cx += pts.getItem(i).x;
-      cy += pts.getItem(i).y;
-    }
-    return { x: cx / pts.numberOfItems, y: cy / pts.numberOfItems };
-  });
+  // Depth multipliers: depth 0 = barely moves, depth 4 = full movement
+  const TX_K  = [0.018, 0.085, 0.22, 0.46, 1.0]; // x-translation factor
+  const TY_K  = [0.012, 0.060, 0.16, 0.34, 0.72]; // y-translation factor (less than x)
+  const ROT_K = [0.04,  0.18,  0.48, 0.95, 1.8];  // rotation factor (degrees)
+  const TX_MAX = 36; // max px at depth-4
+  const TY_MAX = 22;
+  const ROT_MAX = 2.0; // max deg at depth-4
 
+  // ── State ──────────────────────────────────────────────────────────────────
   let targetX = 0, targetY = 0;
   let currentX = 0, currentY = 0;
+  let isOver = false;
   let rafId = 0;
 
-  function lerp(a: number, b: number, t: number): number {
-    return a + (b - a) * t;
+  function lerp(a: number, b: number, t: number) { return a + (b - a) * t; }
+
+  // Slow Lissajous idle drift so shards never look frozen
+  function idle(t: number) {
+    return {
+      x: 0.11 * Math.sin(t * 0.000295),
+      y: 0.08 * Math.sin(t * 0.000471 + Math.PI * 0.38),
+    };
   }
 
-  function tick() {
-    currentX = lerp(currentX, targetX, 0.055);
-    currentY = lerp(currentY, targetY, 0.055);
-
-    const dx = Math.abs(currentX - targetX);
-    const dy = Math.abs(currentY - targetY);
-
-    shards.forEach((shard, i) => {
-      const depth = parseInt(shard.dataset.depth ?? '1', 10);
-      const tx = currentX * depth * 5.5;
-      const ty = currentY * depth * 3.5;
-      const rot = currentX * depth * 0.55;
-      const { x: cx, y: cy } = centers[i];
-      shard.setAttribute(
-        'transform',
-        `translate(${tx} ${ty}) rotate(${rot} ${cx} ${cy})`
-      );
-    });
-
-    // Keep ticking until we've settled (avoids idle GPU work)
-    if (dx > 0.0005 || dy > 0.0005) {
-      rafId = requestAnimationFrame(tick);
-    } else {
-      rafId = 0;
+  // ── rAF loop ───────────────────────────────────────────────────────────────
+  function tick(now: number) {
+    if (!isOver) {
+      const d = idle(now);
+      targetX = d.x;
+      targetY = d.y;
     }
-  }
 
-  function scheduleRaf() {
-    if (!rafId) rafId = requestAnimationFrame(tick);
-  }
+    currentX = lerp(currentX, targetX, 0.09);
+    currentY = lerp(currentY, targetY, 0.09);
 
-  // Bail out entirely if user prefers reduced motion
-  if (!window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
-    hero.addEventListener('mousemove', e => {
-      const r = hero.getBoundingClientRect();
-      targetX = (e.clientX - r.left - r.width  / 2) / (r.width  / 2);
-      targetY = (e.clientY - r.top  - r.height / 2) / (r.height / 2);
-      scheduleRaf();
+    layers.forEach((layer, d) => {
+      if (!layer) return;
+      const tx  = currentX * TX_K[d]  * TX_MAX;
+      const ty  = currentY * TY_K[d]  * TY_MAX;
+      const rot = currentX * ROT_K[d] * ROT_MAX;
+      layer.style.transform =
+        `translate(${tx.toFixed(2)}px,${ty.toFixed(2)}px) rotate(${rot.toFixed(3)}deg)`;
     });
 
-    hero.addEventListener('mouseleave', () => {
-      targetX = 0;
-      targetY = 0;
-      scheduleRaf();
-    });
+    rafId = requestAnimationFrame(tick);
+  }
+
+  // ── Reduced-motion gate ────────────────────────────────────────────────────
+  const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  if (reduced) {
+    // Remove entrance animations so final state shows immediately
+    hero.querySelectorAll('.shard').forEach(el =>
+      (el as HTMLElement).style.animation = 'none'
+    );
+  } else {
+    // Mouse tracking (only on pointer devices)
+    if (window.matchMedia('(hover: hover)').matches) {
+      hero.addEventListener('mousemove', e => {
+        const r = hero.getBoundingClientRect();
+        targetX = (e.clientX - r.left  - r.width  / 2) / (r.width  / 2);
+        targetY = (e.clientY - r.top   - r.height / 2) / (r.height / 2);
+        isOver = true;
+      });
+      hero.addEventListener('mouseleave', () => { isOver = false; });
+    }
+
+    // Start the rAF loop; Lissajous runs immediately so shards drift on load
+    rafId = requestAnimationFrame(tick);
   }
 </script>
