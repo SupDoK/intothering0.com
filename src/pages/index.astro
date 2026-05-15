@@ -14,7 +14,7 @@ const allPosts = (await getCollection('posts', ({ data }) => !data.draft)).sort(
 const totalPages = Math.max(1, Math.ceil(allPosts.length / POSTS_PER_PAGE));
 const posts = allPosts.slice(0, POSTS_PER_PAGE);
 ---
-<BaseLayout title="intothering0.com — Windows Internals & Malware Development" ambientShards={true} ambientAnimated={true}>
+<BaseLayout title="intothering0.com — Windows Internals & Malware Development">
   <ShatteredHero />
   <div class="container">
     <section class="post-list">
