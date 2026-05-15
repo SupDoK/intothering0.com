@@ -1,0 +1,25 @@
+---
+interface Props {
+  currentPage: number;
+  totalPages: number;
+}
+
+const { currentPage, totalPages } = Astro.props;
+
+function pageUrl(n: number): string {
+  return n === 1 ? '/' : `/page/${n}/`;
+}
+---
+<nav class="pagination" aria-label="Pagination">
+  {currentPage > 1
+    ? <a href={pageUrl(currentPage - 1)} class="pagination__btn">← Previous</a>
+    : <span class="pagination__btn pagination__btn--disabled" aria-hidden="true">← Previous</span>
+  }
+
+  <span class="pagination__info">Page {currentPage} of {totalPages}</span>
+
+  {currentPage < totalPages
+    ? <a href={pageUrl(currentPage + 1)} class="pagination__btn">Next →</a>
+    : <span class="pagination__btn pagination__btn--disabled" aria-hidden="true">Next →</span>
+  }
+</nav>

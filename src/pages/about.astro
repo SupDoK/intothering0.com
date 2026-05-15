@@ -1,0 +1,41 @@
+---
+import BaseLayout from '../layouts/BaseLayout.astro';
+---
+<BaseLayout
+  title="About — intothering0.com"
+  description="About the author of intothering0.com — security research, Windows Internals, and Malware Development."
+>
+  <div class="container">
+    <div class="about-page">
+      <h1>About</h1>
+      <div class="about-body">
+        <!--
+          TODO: Replace the placeholder paragraphs below with your actual bio.
+          Keep it as long or short as you like — the layout will adapt.
+        -->
+        <p>
+          Security researcher focused on Windows Internals, Malware Development,
+          and the low-level mechanics that make modern defenses tick.
+          This blog is a notebook: things I've worked through, details I want
+          to be able to reference later, and write-ups that might save someone
+          else a few hours.
+        </p>
+        <p>
+          Topics lean toward user-mode exploitation primitives, loader mechanics,
+          syscall abuse, and the telemetry that defenders use to catch it all.
+          Occasionally: kernel.
+        </p>
+        <p>
+          Nothing here is novel research — it's synthesis, implementation notes,
+          and explanations of techniques that already exist in papers and public
+          tooling. I find writing things out forces precision that reading alone
+          doesn't.
+        </p>
+        <p class="muted">
+          <!-- TODO: Add contact info, Twitter/X, GitHub, or any relevant links here -->
+          Find me on GitHub or reach out via email.
+        </p>
+      </div>
+    </div>
+  </div>
+</BaseLayout>

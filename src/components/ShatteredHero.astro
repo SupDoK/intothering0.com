@@ -1,0 +1,280 @@
+---
+// TODO: Replace the site title text in .hero-eyebrow below
+---
+<section class="hero" id="hero">
+  <!--
+    Hand-authored SVG: 22 glass shards radiating from an explosion center at ~(470, 188).
+    data-depth: 1 = background (slow), 4 = foreground (fast).
+    Fills are pale blue-white at varied opacities; strokes alternate between thin red
+    highlights and icy edge glints to simulate light catching the fracture lines.
+  -->
+  <svg
+    class="hero-svg"
+    viewBox="0 0 1000 380"
+    preserveAspectRatio="xMidYMid slice"
+    xmlns="http://www.w3.org/2000/svg"
+    aria-hidden="true"
+  >
+    <defs>
+      <!-- Radial glow behind the shatter point -->
+      <radialGradient id="shatterGlow" cx="47%" cy="49%" r="42%" gradientUnits="objectBoundingBox">
+        <stop offset="0%"   stop-color="#c41e3a" stop-opacity="0.22"/>
+        <stop offset="45%"  stop-color="#7a0010" stop-opacity="0.07"/>
+        <stop offset="100%" stop-color="#0a0a0a" stop-opacity="0"/>
+      </radialGradient>
+      <!-- Subtle light gradient for shard fills -->
+      <linearGradient id="shardFill" x1="0%" y1="0%" x2="100%" y2="100%">
+        <stop offset="0%"   stop-color="#c8dff0" stop-opacity="1"/>
+        <stop offset="100%" stop-color="#8fb8d8" stop-opacity="1"/>
+      </linearGradient>
+    </defs>
+
+    <!-- Background glow -->
+    <rect width="1000" height="380" fill="url(#shatterGlow)"/>
+
+    <!-- ── BACKGROUND SHARDS (depth 1–2, large, muted) ───────────────── -->
+
+    <!-- Shard 1: large upper-left -->
+    <polygon
+      data-depth="1"
+      points="28,8 298,6 450,150 270,210 52,165"
+      fill="url(#shardFill)" fill-opacity="0.06"
+      stroke="#2a1416" stroke-width="1"
+    />
+    <!-- Shard 2: large upper-right -->
+    <polygon
+      data-depth="1"
+      points="528,6 868,2 968,120 790,175 552,90"
+      fill="url(#shardFill)" fill-opacity="0.055"
+      stroke="#2a1416" stroke-width="1"
+    />
+    <!-- Shard 3: large lower-right -->
+    <polygon
+      data-depth="2"
+      points="640,258 888,220 992,358 960,378 680,378"
+      fill="url(#shardFill)" fill-opacity="0.075"
+      stroke="#2a1416" stroke-width="1"
+    />
+    <!-- Shard 4: large lower-left -->
+    <polygon
+      data-depth="2"
+      points="26,298 248,255 340,368 220,378 26,378"
+      fill="url(#shardFill)" fill-opacity="0.065"
+      stroke="#2a1416" stroke-width="1"
+    />
+    <!-- Shard 21: upper-far-right corner -->
+    <polygon
+      data-depth="2"
+      points="890,2 1000,0 1000,82 924,100 872,44"
+      fill="url(#shardFill)" fill-opacity="0.055"
+      stroke="#2a1416" stroke-width="1"
+    />
+
+    <!-- ── MIDGROUND SHARDS (depth 3, medium, red-highlighted edges) ─── -->
+
+    <!-- Shard 5: medium upper-center -->
+    <polygon
+      data-depth="3"
+      points="415,26 540,6 595,130 508,160 390,92"
+      fill="url(#shardFill)" fill-opacity="0.13"
+      stroke="#c41e3a" stroke-width="0.6" stroke-opacity="0.5"
+    />
+    <!-- Shard 6: medium right-center -->
+    <polygon
+      data-depth="3"
+      points="620,170 775,135 804,284 682,314 590,250"
+      fill="url(#shardFill)" fill-opacity="0.11"
+      stroke="#c41e3a" stroke-width="0.6" stroke-opacity="0.45"
+    />
+    <!-- Shard 7: medium lower-center -->
+    <polygon
+      data-depth="2"
+      points="474,270 595,250 630,372 520,378 440,338"
+      fill="url(#shardFill)" fill-opacity="0.11"
+      stroke="#c41e3a" stroke-width="0.6" stroke-opacity="0.4"
+    />
+    <!-- Shard 8: medium left-center -->
+    <polygon
+      data-depth="3"
+      points="215,160 390,125 420,244 330,290 190,258"
+      fill="url(#shardFill)" fill-opacity="0.09"
+      stroke="#c41e3a" stroke-width="0.6" stroke-opacity="0.4"
+    />
+    <!-- Shard 14: left-edge strip -->
+    <polygon
+      data-depth="2"
+      points="0,238 120,215 150,315 68,355 0,334"
+      fill="url(#shardFill)" fill-opacity="0.07"
+      stroke="#c41e3a" stroke-width="0.5" stroke-opacity="0.35"
+    />
+    <!-- Shard 12: small right-mid area -->
+    <polygon
+      data-depth="3"
+      points="820,150 905,124 924,195 844,215 802,172"
+      fill="url(#shardFill)" fill-opacity="0.14"
+      stroke="#c41e3a" stroke-width="0.5" stroke-opacity="0.5"
+    />
+    <!-- Shard 17: small lower-left -->
+    <polygon
+      data-depth="3"
+      points="130,365 270,330 300,378 210,378 118,378"
+      fill="url(#shardFill)" fill-opacity="0.12"
+      stroke="#c41e3a" stroke-width="0.5" stroke-opacity="0.4"
+    />
+    <!-- Shard 20: far-right thin strip -->
+    <polygon
+      data-depth="3"
+      points="944,245 1000,228 1000,320 950,325"
+      fill="url(#shardFill)" fill-opacity="0.09"
+      stroke="#c41e3a" stroke-width="0.5" stroke-opacity="0.3"
+    />
+    <!-- Shard 22: bottom-center fragment -->
+    <polygon
+      data-depth="3"
+      points="394,370 505,353 524,378 418,378 380,378"
+      fill="url(#shardFill)" fill-opacity="0.14"
+      stroke="#c41e3a" stroke-width="0.5" stroke-opacity="0.45"
+    />
+
+    <!-- ── FOREGROUND SHARDS (depth 4, small, icy glint edges) ───────── -->
+
+    <!-- Shard 9: small top-center, near explosion -->
+    <polygon
+      data-depth="4"
+      points="454,17 534,4 558,74 492,91 434,53"
+      fill="url(#shardFill)" fill-opacity="0.22"
+      stroke="rgba(200,225,248,0.55)" stroke-width="0.7"
+    />
+    <!-- Shard 10: small upper-left area -->
+    <polygon
+      data-depth="4"
+      points="285,17 384,7 404,79 344,93 272,54"
+      fill="url(#shardFill)" fill-opacity="0.18"
+      stroke="rgba(200,225,248,0.5)" stroke-width="0.7"
+    />
+    <!-- Shard 11: narrow elongated crossing center -->
+    <polygon
+      data-depth="4"
+      points="416,118 594,88 610,150 422,180"
+      fill="url(#shardFill)" fill-opacity="0.24"
+      stroke="rgba(200,225,248,0.6)" stroke-width="0.8"
+    />
+    <!-- Shard 15: small upper-right corner -->
+    <polygon
+      data-depth="4"
+      points="734,17 844,7 874,84 794,104 720,59"
+      fill="url(#shardFill)" fill-opacity="0.20"
+      stroke="rgba(200,225,248,0.5)" stroke-width="0.7"
+    />
+    <!-- Shard 16: tiny center-right fragment -->
+    <polygon
+      data-depth="4"
+      points="660,220 724,200 740,260 674,277"
+      fill="url(#shardFill)" fill-opacity="0.28"
+      stroke="rgba(200,225,248,0.65)" stroke-width="0.8"
+    />
+    <!-- Shard 13: tiny bottom-right -->
+    <polygon
+      data-depth="4"
+      points="870,334 945,310 960,378 878,378"
+      fill="url(#shardFill)" fill-opacity="0.20"
+      stroke="rgba(200,225,248,0.5)" stroke-width="0.7"
+    />
+    <!-- Shard 18: small near-center upper -->
+    <polygon
+      data-depth="4"
+      points="494,78 570,60 584,130 518,148"
+      fill="url(#shardFill)" fill-opacity="0.26"
+      stroke="rgba(200,225,248,0.65)" stroke-width="0.9"
+    />
+    <!-- Shard 19: tiny narrow center fragment — highest opacity, closest -->
+    <polygon
+      data-depth="4"
+      points="488,158 570,138 580,192 500,210"
+      fill="url(#shardFill)" fill-opacity="0.32"
+      stroke="rgba(220,238,252,0.75)" stroke-width="1"
+    />
+  </svg>
+
+  <!-- Title overlay (lower-left, in a sparse area of the composition) -->
+  <div class="hero-overlay">
+    <!-- TODO: Replace this with your preferred site title or handle -->
+    <span class="hero-eyebrow">Into The Ring 0</span>
+    <p class="hero-tagline">windows internals &nbsp;·&nbsp; maldev &nbsp;·&nbsp; security research</p>
+  </div>
+</section>
+
+<script>
+  const hero = document.getElementById('hero') as HTMLElement;
+  if (!hero) throw new Error('hero not found');
+
+  const shards = Array.from(
+    hero.querySelectorAll<SVGPolygonElement>('polygon[data-depth]')
+  );
+
+  // Pre-compute centroid for each shard (for rotation pivot)
+  const centers = shards.map(p => {
+    const pts = p.points;
+    let cx = 0, cy = 0;
+    for (let i = 0; i < pts.numberOfItems; i++) {
+      cx += pts.getItem(i).x;
+      cy += pts.getItem(i).y;
+    }
+    return { x: cx / pts.numberOfItems, y: cy / pts.numberOfItems };
+  });
+
+  let targetX = 0, targetY = 0;
+  let currentX = 0, currentY = 0;
+  let rafId = 0;
+
+  function lerp(a: number, b: number, t: number): number {
+    return a + (b - a) * t;
+  }
+
+  function tick() {
+    currentX = lerp(currentX, targetX, 0.055);
+    currentY = lerp(currentY, targetY, 0.055);
+
+    const dx = Math.abs(currentX - targetX);
+    const dy = Math.abs(currentY - targetY);
+
+    shards.forEach((shard, i) => {
+      const depth = parseInt(shard.dataset.depth ?? '1', 10);
+      const tx = currentX * depth * 5.5;
+      const ty = currentY * depth * 3.5;
+      const rot = currentX * depth * 0.55;
+      const { x: cx, y: cy } = centers[i];
+      shard.setAttribute(
+        'transform',
+        `translate(${tx} ${ty}) rotate(${rot} ${cx} ${cy})`
+      );
+    });
+
+    // Keep ticking until we've settled (avoids idle GPU work)
+    if (dx > 0.0005 || dy > 0.0005) {
+      rafId = requestAnimationFrame(tick);
+    } else {
+      rafId = 0;
+    }
+  }
+
+  function scheduleRaf() {
+    if (!rafId) rafId = requestAnimationFrame(tick);
+  }
+
+  // Bail out entirely if user prefers reduced motion
+  if (!window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+    hero.addEventListener('mousemove', e => {
+      const r = hero.getBoundingClientRect();
+      targetX = (e.clientX - r.left - r.width  / 2) / (r.width  / 2);
+      targetY = (e.clientY - r.top  - r.height / 2) / (r.height / 2);
+      scheduleRaf();
+    });
+
+    hero.addEventListener('mouseleave', () => {
+      targetX = 0;
+      targetY = 0;
+      scheduleRaf();
+    });
+  }
+</script>
