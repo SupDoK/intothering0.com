@@ -1,0 +1,196 @@
+---
+import { Delaunay } from 'd3-delaunay';
+
+interface Props {
+  animated?: boolean;
+}
+const { animated = false } = Astro.props;
+
+// ── Identical geometry to ShatteredHero (same seed = same Voronoi) ───────────
+function makeRand(seed: number) {
+  let s = seed;
+  return () => {
+    s = (s + 0x6D2B79F5) | 0;
+    let t = Math.imul(s ^ (s >>> 15), 1 | s);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+const rand = makeRand(0xc0ffee42);
+
+function gauss(mean: number, std: number): number {
+  const u = Math.max(1e-9, rand());
+  const v = rand();
+  return mean + Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * v) * std;
+}
+
+const W = 1000, H = 420;
+const IX = 375, IY = 198;
+const TX_MAX = 58, TY_MAX = 32, ROT_MAX = 4.0;
+const clamp = (v: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, v));
+
+const seeds: [number, number][] = [];
+for (let i = 0; i < 38; i++)
+  seeds.push([clamp(gauss(IX, 44), 2, W-2), clamp(gauss(IY, 36), 2, H-2)]);
+for (let i = 0; i < 32; i++)
+  seeds.push([clamp(gauss(IX, 135), 2, W-2), clamp(gauss(IY, 108), 2, H-2)]);
+for (let i = 0; i < 28; i++)
+  seeds.push([clamp(gauss(IX, 285), 2, W-2), clamp(gauss(IY, 195), 2, H-2)]);
+
+const borders: [number, number][] = [
+  [1,1],[250,1],[500,1],[750,1],[999,1],
+  [1,140],[999,140],[1,280],[999,280],
+  [1,419],[250,419],[500,419],[750,419],[999,419],
+];
+
+const delaunay = Delaunay.from([...seeds, ...borders]);
+const voronoi  = delaunay.voronoi([0, 0, W, H]);
+
+interface AmbShard {
+  pts:          string;
+  txBase:       number;
+  tyBase:       number;
+  rotBase:      number;
+  rotScale:     number;
+  fillOpacity:  number;
+  strokeColor:  string;
+  strokeOpacity: number;
+  strokeWidth:  number;
+}
+
+const rawCells: { pts: [number,number][]; dist: number }[] = [];
+let maxDist = 0;
+for (const poly of voronoi.cellPolygons()) {
+  if (!poly || poly.length < 3) continue;
+  const pts = Array.from(poly) as [number,number][];
+  const cx  = pts.reduce((s, p) => s + p[0], 0) / pts.length;
+  const cy  = pts.reduce((s, p) => s + p[1], 0) / pts.length;
+  const dist = Math.hypot(cx - IX, cy - IY);
+  if (dist > maxDist) maxDist = dist;
+  rawCells.push({ pts, dist });
+}
+
+const shards: AmbShard[] = rawCells.map((cell, i) => {
+  const { pts, dist } = cell;
+  const distNorm = Math.min(dist / (maxDist * 0.90), 1.0);
+  const depth    = Math.pow(1 - distNorm, 0.60);
+
+  const nx = 0.95 + rand() * 0.10;
+  const ny = 0.95 + rand() * 0.10;
+  const txBase  = parseFloat((TX_MAX  * depth * nx).toFixed(2));
+  const tyBase  = parseFloat((TY_MAX  * depth * ny).toFixed(2));
+  const rotBase = parseFloat((ROT_MAX * depth).toFixed(3));
+
+  const rotDir   = rand() < 0.12 ? -1 : 1;
+  const rotMag   = 0.10 + rand() * 0.50;
+  const rotScale = parseFloat((rotDir * rotMag).toFixed(3));
+
+  const fillOpacity   = parseFloat((0.07 + depth * 0.23 + rand() * 0.06).toFixed(3));
+  const isAccent      = (i % 7 === 2 || i % 13 === 1);
+  const strokeColor   = isAccent ? '#c41e3a' : '#c4ddf0';
+  const strokeOpacity = parseFloat((0.10 + depth * 0.60 + rand() * 0.10).toFixed(3));
+  const strokeWidth   = parseFloat((0.30 + depth * 0.75).toFixed(2));
+
+  return {
+    pts: pts.map(([x, y]) => `${x.toFixed(1)},${y.toFixed(1)}`).join(' '),
+    txBase, tyBase, rotBase, rotScale,
+    fillOpacity, strokeColor, strokeOpacity, strokeWidth,
+  };
+});
+---
+
+<div
+  id="ambient-shards"
+  class:list={['ambient-shards', { 'is-animated': animated }]}
+  aria-hidden="true"
+>
+  <svg
+    viewBox={`0 0 ${W} ${H}`}
+    preserveAspectRatio="xMidYMid slice"
+    xmlns="http://www.w3.org/2000/svg"
+    width="100%"
+    height="100%"
+  >
+    <defs>
+      <radialGradient id="amb-impactGlow" cx="37.5%" cy="47.1%" r="48%"
+        gradientUnits="userSpaceOnUse" fx="375" fy="198">
+        <stop offset="0%"   stop-color="#c41e3a" stop-opacity="0.18"/>
+        <stop offset="35%"  stop-color="#7a0010" stop-opacity="0.06"/>
+        <stop offset="100%" stop-color="#0a0a0a" stop-opacity="0"/>
+      </radialGradient>
+    </defs>
+
+    <rect width={W} height={H} fill="url(#amb-impactGlow)"/>
+
+    <g id="amb-shards">
+      {shards.map(s => (
+        <g
+          class="shard-rot"
+          style={`--tx:${s.txBase}px;--ty:${s.tyBase}px;--rot-base:${s.rotBase};--rot-scale:${s.rotScale}`}
+        >
+          <polygon
+            points={s.pts}
+            fill="#0a0d10"
+            fill-opacity={s.fillOpacity}
+            stroke={s.strokeColor}
+            stroke-opacity={s.strokeOpacity}
+            stroke-width={s.strokeWidth}
+            stroke-linejoin="bevel"
+          />
+        </g>
+      ))}
+    </g>
+  </svg>
+</div>
+
+<style>
+  /*
+    position: fixed keeps the pattern as a stable wallpaper while scrolling.
+    z-index: 0 places it below normal-flow content but above the body background.
+    pointer-events: none ensures it never blocks clicks or hovers.
+
+    The mask-image gradient creates a "hole" over the 760 px content column
+    so the pattern is visible only in the left/right gutters, with a 48 px
+    soft fade at each column edge (±24 px around the 380 px half-width mark).
+
+    On narrow viewports (≤ 860 px) there are no meaningful gutters, so the
+    element is hidden entirely to avoid overflow or wasted compositing.
+  */
+  .ambient-shards {
+    position: fixed;
+    inset: 0;
+    pointer-events: none;
+    z-index: 0;
+    overflow: hidden;
+    opacity: 0.20;
+    -webkit-mask-image: linear-gradient(
+      to right,
+      black 0,
+      black calc(50% - 404px),
+      transparent calc(50% - 356px),
+      transparent calc(50% + 356px),
+      black calc(50% + 404px),
+      black 100%
+    );
+    mask-image: linear-gradient(
+      to right,
+      black 0,
+      black calc(50% - 404px),
+      transparent calc(50% - 356px),
+      transparent calc(50% + 356px),
+      black calc(50% + 404px),
+      black 100%
+    );
+  }
+
+  /* Animated variant (home / paginated pages): higher opacity, full motion */
+  .ambient-shards.is-animated { opacity: 0.65; }
+
+  /* Static variant: pin shards in place regardless of inherited CSS vars */
+  .ambient-shards:not(.is-animated) .shard-rot { transform: none; }
+
+  /* Subtle softening for the article ghost */
+  .ambient-shards:not(.is-animated) svg { filter: blur(0.4px); }
+
+  @media (max-width: 860px) { .ambient-shards { display: none; } }
+</style>

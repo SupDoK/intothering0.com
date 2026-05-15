@@ -382,3 +382,28 @@ footer p {
   font-size: 0.75rem;
   font-family: var(--font-mono);
 }
+
+/* ── Shard parallax (Houdini typed custom properties) ────────────────────── */
+/* Shared by ShatteredHero and AmbientShards — must live in global.css so    */
+/* they're registered on article pages where ShatteredHero is not rendered.  */
+@property --hero-mx-n { syntax: '<number>'; inherits: true;  initial-value: 0;   }
+@property --hero-my-n { syntax: '<number>'; inherits: true;  initial-value: 0;   }
+@property --tx        { syntax: '<length>'; inherits: false; initial-value: 0px; }
+@property --ty        { syntax: '<length>'; inherits: false; initial-value: 0px; }
+@property --rot-base  { syntax: '<number>'; inherits: false; initial-value: 0;   }
+@property --rot-scale { syntax: '<number>'; inherits: false; initial-value: 1;   }
+
+/* Shared shard transform — JS writes --hero-mx-n/--hero-my-n on <body>;     */
+/* both ShatteredHero and AmbientShards inherit them automatically.           */
+.shard-rot {
+  transform-box: fill-box;
+  transform-origin: center;
+  transform:
+    translate(
+      calc(var(--hero-mx-n) * var(--tx)),
+      calc(var(--hero-my-n) * var(--ty))
+    )
+    rotate(
+      calc(var(--hero-mx-n) * var(--rot-base) * var(--rot-scale) * 1deg)
+    );
+}

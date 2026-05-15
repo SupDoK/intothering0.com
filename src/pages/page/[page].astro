@@ -22,7 +22,7 @@ interface Props {
 
 const { page } = Astro.props;
 ---
-<BaseLayout title={`Page ${page.currentPage} — intothering0.com`}>
+<BaseLayout title={`Page ${page.currentPage} — intothering0.com`} ambientShards={true} ambientAnimated={true}>
   <div class="container">
     <section class="post-list">
       {page.data.map(post => (

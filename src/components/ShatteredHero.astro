@@ -150,68 +150,10 @@ const rays = Array.from({ length: 10 }, (_, i) => {
 });
 ---
 
-<style is:global>
-  /*
-    Typed custom properties let CSS resolve calc(<number>×<length>) and
-    calc(<number>×<number>×1deg) without any per-shard JS work.
-    --hero-mx-n / --hero-my-n are the only two values JS writes per frame.
-  */
-  @property --hero-mx-n {
-    syntax: '<number>';
-    inherits: true;
-    initial-value: 0;
-  }
-  @property --hero-my-n {
-    syntax: '<number>';
-    inherits: true;
-    initial-value: 0;
-  }
-  @property --tx {
-    syntax: '<length>';
-    inherits: false;
-    initial-value: 0px;
-  }
-  @property --ty {
-    syntax: '<length>';
-    inherits: false;
-    initial-value: 0px;
-  }
-  @property --rot-base {
-    syntax: '<number>';
-    inherits: false;
-    initial-value: 0;
-  }
-  @property --rot-scale {
-    syntax: '<number>';
-    inherits: false;
-    initial-value: 1;
-  }
-</style>
-
 <style>
-  /*
-    Each .shard-rot is fully independent: its --tx/--ty/--rot-base/--rot-scale
-    are all baked at build time and unique.  JS sets only two properties on the
-    SVG element; the browser fans out the rest across all 112 shards for free.
-
-    Because adjacent shards have depth values that differ by only 0.03–0.10,
-    their --tx values differ by at most 2–6 px.  That sub-pixel proximity keeps
-    the surface feeling attached while the 0 → TX_MAX range gives the dome depth.
-  */
-  .shard-rot {
-    transform-box: fill-box;
-    transform-origin: center;
-    transform:
-      translate(
-        calc(var(--hero-mx-n) * var(--tx)),
-        calc(var(--hero-my-n) * var(--ty))
-      )
-      rotate(
-        calc(var(--hero-mx-n) * var(--rot-base) * var(--rot-scale) * 1deg)
-      );
-  }
-
-  /* ── Entrance bloom ──────────────────────────────────────────────────── */
+  /* ── Entrance bloom (scoped to this component only) ─────────────────── */
+  /* @property declarations and .shard-rot transform live in global.css    */
+  /* so AmbientShards can share them without duplicating.                  */
   @media not (prefers-reduced-motion: reduce) {
     .shard {
       animation: shardIn 0.92s cubic-bezier(0.12, 0.82, 0.28, 1) both;
@@ -362,8 +304,9 @@ const rays = Array.from({ length: 10 }, (_, i) => {
     pupilCurrentX = lerp(pupilCurrentX, pupilTargetX, 0.12);
     pupilCurrentY = lerp(pupilCurrentY, pupilTargetY, 0.12);
 
-    svg.style.setProperty('--hero-mx-n', currentX.toFixed(5));
-    svg.style.setProperty('--hero-my-n', currentY.toFixed(5));
+    // Write to <body> — inherits: true propagates to hero SVG and AmbientShards.
+    document.body.style.setProperty('--hero-mx-n', currentX.toFixed(5));
+    document.body.style.setProperty('--hero-my-n', currentY.toFixed(5));
     pupil.setAttribute('cx', pupilCurrentX.toFixed(2));
     pupil.setAttribute('cy', pupilCurrentY.toFixed(2));
 

@@ -19,7 +19,7 @@ const formatted = post.data.date.toLocaleDateString('en-US', {
   day: 'numeric',
 });
 ---
-<BaseLayout title={`${post.data.title} — intothering0.com`} description={post.data.description}>
+<BaseLayout title={`${post.data.title} — intothering0.com`} description={post.data.description} ambientShards={true}>
   <div class="container">
     <article class="post">
       <header class="post-header">

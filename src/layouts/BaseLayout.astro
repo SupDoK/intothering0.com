@@ -1,15 +1,20 @@
 ---
 import Nav from '../components/Nav.astro';
+import AmbientShards from '../components/AmbientShards.astro';
 import '../styles/global.css';
 
 interface Props {
   title: string;
   description?: string;
+  ambientShards?: boolean;
+  ambientAnimated?: boolean;
 }
 
 const {
   title,
   description = 'A security research blog covering Windows Internals, Malware Development, and applied offensive techniques.',
+  ambientShards = false,
+  ambientAnimated = false,
 } = Astro.props;
 ---
 <!doctype html>
@@ -31,6 +36,7 @@ const {
     />
   </head>
   <body>
+    {ambientShards && <AmbientShards animated={ambientAnimated} />}
     <Nav />
     <main>
       <slot />
