@@ -8,7 +8,7 @@ automatically to GitHub Pages on every push to `main`.
 
 ## How to add a post
 
-1. Create a `.md` file in `src/content/posts/` — the filename becomes the URL slug.
+1. Create a `.md` file in `src/content/posts/` — the filename becomes the URL slug!
    Example: `src/content/posts/my-new-post.md` → `/posts/my-new-post/`
 
 2. Add the required frontmatter at the top:
