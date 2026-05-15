@@ -310,7 +310,7 @@ const rays = Array.from({ length: 10 }, (_, i) => {
       ))}
     </g>
 
-    <circle cx={IX} cy={IY} r="3.5" fill="#e63946" opacity="0.85"/>
+    <circle id="eye-pupil" cx={IX} cy={IY} r="3.5" fill="#e63946" opacity="0.85"/>
     <circle cx={IX} cy={IY} r="9"   fill="none" stroke="#c41e3a" stroke-width="0.8" opacity="0.5"/>
     <circle cx={IX} cy={IY} r="18"  fill="none" stroke="#c41e3a" stroke-width="0.4" opacity="0.25"/>
   </svg>
@@ -331,6 +331,12 @@ const rays = Array.from({ length: 10 }, (_, i) => {
   let isOver   = false;
   let rafId    = 0;
 
+  const svgSVG = document.getElementById('hero-svg') as unknown as SVGSVGElement;
+  const pupil  = document.getElementById('eye-pupil') as unknown as SVGCircleElement;
+  const PUPIL_X0 = 375, PUPIL_Y0 = 198, PUPIL_MAX_R = 5.5;
+  let pupilTargetX = PUPIL_X0, pupilTargetY = PUPIL_Y0;
+  let pupilCurrentX = PUPIL_X0, pupilCurrentY = PUPIL_Y0;
+
   function lerp(a: number, b: number, t: number) { return a + (b - a) * t; }
 
   // Lissajous idle: the two incommensurate frequencies create a never-repeating
@@ -347,14 +353,19 @@ const rays = Array.from({ length: 10 }, (_, i) => {
       const d = idle(now);
       targetX = d.x;
       targetY = d.y;
+      pupilTargetX = PUPIL_X0 + d.x * 20;
+      pupilTargetY = PUPIL_Y0 + d.y * 16;
     }
 
     currentX = lerp(currentX, targetX, 0.075);
     currentY = lerp(currentY, targetY, 0.075);
+    pupilCurrentX = lerp(pupilCurrentX, pupilTargetX, 0.12);
+    pupilCurrentY = lerp(pupilCurrentY, pupilTargetY, 0.12);
 
-    // Two writes drive 112 independent CSS transforms — no per-shard JS.
     svg.style.setProperty('--hero-mx-n', currentX.toFixed(5));
     svg.style.setProperty('--hero-my-n', currentY.toFixed(5));
+    pupil.setAttribute('cx', pupilCurrentX.toFixed(2));
+    pupil.setAttribute('cy', pupilCurrentY.toFixed(2));
 
     rafId = requestAnimationFrame(tick);
   }
@@ -371,6 +382,19 @@ const rays = Array.from({ length: 10 }, (_, i) => {
         targetX = (e.clientX - r.left  - r.width  / 2) / (r.width  / 2);
         targetY = (e.clientY - r.top   - r.height / 2) / (r.height / 2);
         isOver  = true;
+        const pt = svgSVG.createSVGPoint();
+        pt.x = e.clientX;
+        pt.y = e.clientY;
+        const ctm = svgSVG.getScreenCTM();
+        if (ctm) {
+          const p  = pt.matrixTransform(ctm.inverse());
+          const dx = p.x - PUPIL_X0;
+          const dy = p.y - PUPIL_Y0;
+          const d  = Math.hypot(dx, dy);
+          const sc = d > PUPIL_MAX_R ? PUPIL_MAX_R / d : 1;
+          pupilTargetX = PUPIL_X0 + dx * sc;
+          pupilTargetY = PUPIL_Y0 + dy * sc;
+        }
       });
       hero.addEventListener('mouseleave', () => { isOver = false; });
     }
