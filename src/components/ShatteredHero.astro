@@ -19,25 +19,27 @@ function gauss(mean: number, std: number): number {
   return mean + Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * v) * std;
 }
 
-// ── SVG dimensions & impact point ─────────────────────────────────────────────
+// ── SVG canvas & impact point ─────────────────────────────────────────────────
 const W = 1000, H = 420;
-const IX = 375, IY = 198;
+const IX = 375, IY = 198; // explosion origin (slightly off-centre)
 
-// ── Motion constants (baked per-shard at build time) ──────────────────────────
-const TX_MAX = 40,  TY_MAX = 24,  ROT_MAX = 2.8;
-const TX_K  = [0.018, 0.085, 0.22,  0.46,  1.0 ];
-const TY_K  = [0.012, 0.060, 0.16,  0.34,  0.72];
-const ROT_K = [0.04,  0.18,  0.48,  0.95,  1.8 ];
+// ── Global motion ceilings ────────────────────────────────────────────────────
+// These are the maximum possible values, reached only by the shard sitting
+// exactly on the impact point (depth 1.0).  Every other shard interpolates
+// smoothly downward from here — no discrete bands.
+const TX_MAX  = 58;   // px at depth 1.0, full horizontal deflection
+const TY_MAX  = 32;   // px at depth 1.0, full vertical deflection
+const ROT_MAX = 4.0;  // deg at depth 1.0, full horizontal deflection
 
 // ── Seed points ───────────────────────────────────────────────────────────────
 const seeds: [number, number][] = [];
 const clamp = (v: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, v));
 
-for (let i = 0; i < 38; i++)
+for (let i = 0; i < 38; i++)   // dense crater
   seeds.push([clamp(gauss(IX, 44), 2, W-2), clamp(gauss(IY, 36), 2, H-2)]);
-for (let i = 0; i < 32; i++)
+for (let i = 0; i < 32; i++)   // medium ring
   seeds.push([clamp(gauss(IX, 135), 2, W-2), clamp(gauss(IY, 108), 2, H-2)]);
-for (let i = 0; i < 28; i++)
+for (let i = 0; i < 28; i++)   // sparse outer field
   seeds.push([clamp(gauss(IX, 285), 2, W-2), clamp(gauss(IY, 195), 2, H-2)]);
 
 const borders: [number, number][] = [
@@ -47,19 +49,19 @@ const borders: [number, number][] = [
 ];
 const allSeeds = [...seeds, ...borders];
 
-// ── Voronoi tessellation ──────────────────────────────────────────────────────
+// ── Voronoi tessellation (build-time only) ────────────────────────────────────
 const delaunay = Delaunay.from(allSeeds);
 const voronoi  = delaunay.voronoi([0, 0, W, H]);
 
 // ── Process cells ─────────────────────────────────────────────────────────────
 interface Shard {
   pts:           string;
-  depth:         number;
-  delay:         number;  // entrance animation delay ms
-  txBase:        number;  // px displacement at mx=1.0  (baked, includes depth + noise)
-  tyBase:        number;  // px displacement at my=1.0
-  rotBase:       number;  // degrees at mx=1.0 before rot-scale  (depth-based)
-  rotScale:      number;  // per-shard rotation multiplier; may be negative
+  depth:         number; // continuous 0.0 → 1.0 (0 = edge, 1 = at impact)
+  delay:         number; // entrance animation delay ms
+  txBase:        number; // px at mx=1.0 — unique per shard, no shared bands
+  tyBase:        number; // px at my=1.0
+  rotBase:       number; // deg at mx=1.0 (before rot-scale)
+  rotScale:      number; // signed per-shard multiplier (~12% negative)
   fillOpacity:   number;
   strokeColor:   string;
   strokeOpacity: number;
@@ -67,6 +69,7 @@ interface Shard {
   filter:        string;
 }
 
+// First pass — geometry only
 const raw: { pts: [number,number][]; cx: number; cy: number; dist: number }[] = [];
 let maxDist = 0;
 for (const poly of voronoi.cellPolygons()) {
@@ -79,39 +82,50 @@ for (const poly of voronoi.cellPolygons()) {
   raw.push({ pts, cx, cy, dist });
 }
 
+// Second pass — visual & motion properties
 const shards: Shard[] = raw.map((cell, i) => {
   const { pts, dist } = cell;
 
-  const norm     = 1 - Math.min(dist / (maxDist * 0.92), 1);
-  const rawDepth = norm * 4 + (rand() - 0.5) * 1.1;
-  const depth    = Math.max(0, Math.min(4, Math.round(rawDepth)));
+  // ── Continuous depth ──────────────────────────────────────────────────────
+  // distNorm: 0 = at impact, 1 = canvas corner
+  const distNorm = Math.min(dist / (maxDist * 0.90), 1.0);
+  //
+  // Power curve < 1 widens the mid-depth band: more shards sit between 0.3
+  // and 0.7 instead of piling up at 0 or 1.  This makes the falloff feel
+  // like a smooth dome rather than a hard separation between front and back.
+  const depth = Math.pow(1 - distNorm, 0.60);
 
-  const delay = Math.round((dist / maxDist) * 860);
+  // ── Per-shard motion — no bands, tight noise keeps neighbours attached ────
+  // ±5 % variation: adjacent shards (depth diff ~0.03–0.08) move within 2–4 px
+  // of each other, so they read as one surface.  The overall 0 → TX_MAX range
+  // is what gives the tunnel/dome depth, not inter-shard jitter.
+  const nx    = 0.95 + rand() * 0.10;  // 0.95 – 1.05
+  const ny    = 0.95 + rand() * 0.10;
+  const txBase  = parseFloat((TX_MAX  * depth * nx).toFixed(2));
+  const tyBase  = parseFloat((TY_MAX  * depth * ny).toFixed(2));
+  const rotBase = parseFloat((ROT_MAX * depth).toFixed(3));  // no noise; rotScale handles variation
 
-  // Per-shard motion — depth sets baseline, noise breaks the blocks.
-  // Each shard gets its own displacement magnitude (±25%) so shards at the
-  // same depth visibly travel different distances.
-  const noiseX = 0.75 + rand() * 0.50;
-  const noiseY = 0.75 + rand() * 0.50;
-  const txBase = parseFloat((TX_MAX  * TX_K[depth]  * noiseX).toFixed(2));
-  const tyBase = parseFloat((TY_MAX  * TY_K[depth]  * noiseY).toFixed(2));
-  const rotBase = parseFloat((ROT_MAX * ROT_K[depth]).toFixed(3));
+  // ── Per-shard rotation character ─────────────────────────────────────────
+  // ~12% of shards counter-rotate (negative sign) so the field breathes
+  // without every piece spinning in the same direction.
+  const rotDir   = rand() < 0.12 ? -1 : 1;
+  const rotMag   = 0.10 + rand() * 0.50;  // 0.10 – 0.60
+  const rotScale = parseFloat((rotDir * rotMag).toFixed(3));
 
-  // ~14% of shards counter-rotate.  Foreground shards swing more.
-  const rotDir       = rand() < 0.14 ? -1 : 1;
-  const rotMag       = 0.15 + rand() * 0.55;
-  const rotDepthMult = [0.12, 0.35, 0.65, 0.95, 1.30][depth];
-  const rotScale     = parseFloat((rotDir * rotMag * rotDepthMult).toFixed(3));
-
-  const fillOpacity   = parseFloat((0.10 + (depth / 4) * 0.18 + rand() * 0.07).toFixed(3));
+  // ── Visual properties — depth drives opacity and edge brightness ──────────
+  const fillOpacity   = parseFloat((0.07 + depth * 0.23 + rand() * 0.06).toFixed(3));
   const isAccent      = (i % 7 === 2 || i % 13 === 1);
   const strokeColor   = isAccent ? '#c41e3a' : '#c4ddf0';
-  const strokeOpacity = parseFloat((0.15 + (depth / 4) * 0.55 + rand() * 0.10).toFixed(3));
-  const strokeWidth   = parseFloat((0.4  + (depth / 4) * 0.65).toFixed(2));
+  const strokeOpacity = parseFloat((0.10 + depth * 0.60 + rand() * 0.10).toFixed(3));
+  const strokeWidth   = parseFloat((0.30 + depth * 0.75).toFixed(2));
 
+  // Specular sheen on deep-foreground shards, chromatic fringe on a subset
   let filter = 'none';
-  if      (depth === 4 && i % 5 === 0) filter = 'url(#glassSheen)';
-  else if (depth >= 3  && i % 8 === 3) filter = 'url(#chromatic)';
+  if      (depth > 0.72 && i % 5  === 0) filter = 'url(#glassSheen)';
+  else if (depth > 0.55 && i % 8  === 3) filter = 'url(#chromatic)';
+
+  // Entrance delay: closer shards emerge first → radial bloom
+  const delay = Math.round((dist / maxDist) * 860);
 
   return {
     pts: pts.map(([x, y]) => `${x.toFixed(1)},${y.toFixed(1)}`).join(' '),
@@ -136,15 +150,12 @@ const rays = Array.from({ length: 10 }, (_, i) => {
 });
 ---
 
-<!--
-  --hero-mx-n / --hero-my-n: typed <number> so calc(<number> * <length>)
-  resolves correctly in child elements without any JS per-shard work.
-
-  --tx / --ty: per-shard <length> baked at build time.
-  --rot-base:  per-shard <number> (degrees at mx=1.0, before rot-scale).
-  --rot-scale: per-shard signed multiplier; ~14% are negative (counter-rotate).
--->
 <style is:global>
+  /*
+    Typed custom properties let CSS resolve calc(<number>×<length>) and
+    calc(<number>×<number>×1deg) without any per-shard JS work.
+    --hero-mx-n / --hero-my-n are the only two values JS writes per frame.
+  */
   @property --hero-mx-n {
     syntax: '<number>';
     inherits: true;
@@ -179,14 +190,13 @@ const rays = Array.from({ length: 10 }, (_, i) => {
 
 <style>
   /*
-    Every shard wrapper is independent.  JS only ever writes two custom
-    properties (--hero-mx-n, --hero-my-n) to the SVG element per frame;
-    the browser fans out the per-shard calc() for free.
+    Each .shard-rot is fully independent: its --tx/--ty/--rot-base/--rot-scale
+    are all baked at build time and unique.  JS sets only two properties on the
+    SVG element; the browser fans out the rest across all 112 shards for free.
 
-    translate: each shard has its own --tx / --ty magnitude (depth + ±25% noise).
-    rotate:    each shard has its own --rot-base and --rot-scale, so no two shards
-               tumble at the same rate.  ~14% have a negative --rot-scale and
-               spin against the crowd.
+    Because adjacent shards have depth values that differ by only 0.03–0.10,
+    their --tx values differ by at most 2–6 px.  That sub-pixel proximity keeps
+    the surface feeling attached while the 0 → TX_MAX range gives the dome depth.
   */
   .shard-rot {
     transform-box: fill-box;
@@ -201,17 +211,17 @@ const rays = Array.from({ length: 10 }, (_, i) => {
       );
   }
 
-  /* ── Entrance animation ─────────────────────────────────────────────── */
+  /* ── Entrance bloom ──────────────────────────────────────────────────── */
   @media not (prefers-reduced-motion: reduce) {
     .shard {
-      animation: shardIn 0.88s cubic-bezier(0.15, 0.8, 0.3, 1) both;
+      animation: shardIn 0.92s cubic-bezier(0.12, 0.82, 0.28, 1) both;
       transform-box: fill-box;
       transform-origin: center;
     }
 
     @keyframes shardIn {
-      0%  { transform: scale(0.12); opacity: 0; }
-      52% { opacity: 1; }
+      0%  { transform: scale(0.10); opacity: 0; }
+      50% { opacity: 1; }
       100%{ transform: scale(1);    opacity: 1; }
     }
   }
@@ -278,7 +288,6 @@ const rays = Array.from({ length: 10 }, (_, i) => {
       ))}
     </g>
 
-    <!-- All shards flat — no depth grouping, every shard fully independent -->
     <g id="shards">
       {shards.map(s => (
         <g
@@ -314,17 +323,18 @@ const rays = Array.from({ length: 10 }, (_, i) => {
 </section>
 
 <script>
-  const hero = document.getElementById('hero')   as HTMLElement;
+  const hero = document.getElementById('hero')    as HTMLElement;
   const svg  = document.getElementById('hero-svg') as unknown as SVGElement;
 
   let targetX = 0, targetY = 0;
   let currentX = 0, currentY = 0;
-  let isOver  = false;
-  let rafId   = 0;
+  let isOver   = false;
+  let rafId    = 0;
 
   function lerp(a: number, b: number, t: number) { return a + (b - a) * t; }
 
-  // Slow Lissajous so shards never look frozen
+  // Lissajous idle: the two incommensurate frequencies create a never-repeating
+  // figure that keeps the field alive between mouse interactions.
   function idle(t: number) {
     return {
       x: 0.11 * Math.sin(t * 0.000295),
@@ -339,10 +349,10 @@ const rays = Array.from({ length: 10 }, (_, i) => {
       targetY = d.y;
     }
 
-    currentX = lerp(currentX, targetX, 0.09);
-    currentY = lerp(currentY, targetY, 0.09);
+    currentX = lerp(currentX, targetX, 0.075);
+    currentY = lerp(currentY, targetY, 0.075);
 
-    // Two property writes drive 112 independent shard transforms via CSS calc().
+    // Two writes drive 112 independent CSS transforms — no per-shard JS.
     svg.style.setProperty('--hero-mx-n', currentX.toFixed(5));
     svg.style.setProperty('--hero-my-n', currentY.toFixed(5));
 
