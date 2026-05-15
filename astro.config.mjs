@@ -9,8 +9,8 @@ export default defineConfig({
   // For a project site (any other repo name, e.g. "intothering0.com"):
   //   site: 'https://YOUR_USERNAME.github.io'
   //   base: '/intothering0.com'   <-- must match the repo name exactly
-  site: 'https://SupDoK.github.io',
-  base: '/intothering0.com',
+  site: 'https://intothering0.com',
+  //base: '/intothering0.com',
 
   output: 'static',
 
