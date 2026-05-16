@@ -2,7 +2,7 @@
 title: "Process Hollowing on Windows 11 24H2"
 date: 2026-03-15
 description: "Revisiting the classic RunPE technique against updated Defender telemetry and ETW providers in the Windows 11 24H2 build."
-draft: false
+draft: true
 ---
 
 # Process Hollowing on Windows 11 24H2

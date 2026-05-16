@@ -1,10 +1,9 @@
 ---
 title: "Cold Boot"
-summary: "No articles yet. This is a placeholder, and also a typesetting check — here is what every post will look like when one lands."
+date: 2026-05-16
+description: "No articles yet. This is a placeholder, and also a typesetting check - here is what every post will look like when one lands."
 date: "2026-05-14"
-readTime: "3 min"
-tags: ["meta"]
-featured: true
+draft: false
 ---
 
 Nothing has been posted yet. This entry exists to occupy the index page and

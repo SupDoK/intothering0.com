@@ -2,7 +2,7 @@
 title: "Inline Hooking NtCreateFile in User Mode"
 date: 2026-04-22
 description: "Setting up an x64 inline hook on NtCreateFile with a proper trampoline: overwriting bytes, building the jump-back, and thread safety considerations."
-draft: false
+draft: true
 ---
 
 # Inline Hooking NtCreateFile in User Mode

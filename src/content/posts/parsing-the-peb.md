@@ -2,7 +2,7 @@
 title: "Parsing the PEB Without windows.h"
 date: 2026-02-08
 description: "Walking the Process Environment Block by hand to resolve exports — the foundational technique behind shellcode and reflective loaders."
-draft: false
+draft: true
 ---
 
 # Parsing the PEB Without windows.h
