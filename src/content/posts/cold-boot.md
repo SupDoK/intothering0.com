@@ -2,7 +2,6 @@
 title: "Cold Boot"
 date: 2026-05-16
 description: "No articles yet. This is a placeholder, and also a typesetting check - here is what every post will look like when one lands."
-date: "2026-05-14"
 draft: false
 ---
 
